@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+  <title>Lëtz Arcade 3D - Grand Duchy Tour</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+    body {
+      background: #0b1329;
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    #flag-top {
+      height: 5px;
+      width: 100%;
+      display: flex;
+      z-index: 10;
+    }
+    .fl-r { flex: 1; background: #EA141D; }
+    .fl-w { flex: 1; background: #FFFFFF; }
+    .fl-b { flex: 1; background: #00A1DE; }
+
+    #hud {
+      position: absolute;
+      top: 5px;
+      left: 0;
+      right: 0;
+      padding: 10px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: linear-gradient(180deg, rgba(11,19,41,0.85) 0%, rgba(11,19,41,0) 100%);
+      font-weight: 800;
+      font-size: 14px;
+      letter-spacing: 0.5px;
+      z-index: 5;
+      pointer-events: none;
+    }
+    .val-speed { color: #00A1DE; font-size: 16px; }
+    .val-score { color: #EA141D; font-size: 16px; }
+
+    #canvas-container {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+    canvas { display: block; width: 100%; height: 100%; }
+
+    #overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(11, 19, 41, 0.92);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      text-align: center;
+      z-index: 20;
+    }
+    #overlay h1 {
+      font-size: 26px;
+      font-weight: 900;
+      color: #00A1DE;
+      margin-bottom: 8px;
+      text-shadow: 0 0 15px rgba(0,161,222,0.4);
+    }
+    #overlay p {
+      font-size: 14px;
+      color: #94a3b8;
+      max-width: 320px;
+      margin-bottom: 22px;
+      line-height: 1.5;
+    }
+    .btn-act {
+      background: linear-gradient(135deg, #EA141D, #00A1DE);
+      color: #fff;
+      border: none;
+      padding: 15px 34px;
+      font-size: 17px;
+      font-weight: 900;
+      border-radius: 30px;
+      box-shadow: 0 6px 20px rgba(0,161,222,0.4);
+      cursor: pointer;
+    }
+
+    #touch-bar {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      right: 12px;
+      display: flex;
+      gap: 12px;
+      z-index: 10;
+    }
+    .t-btn {
+      flex: 1;
+      padding: 18px 0;
+      font-size: 18px;
+      font-weight: 900;
+      background: rgba(30, 41, 59, 0.85);
+      backdrop-filter: blur(6px);
+      color: #fff;
+      border: 2px solid #00A1DE;
+      border-radius: 12px;
+      touch-action: none;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .t-btn:active { background: #00A1DE; color: #0b1329; }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+  <div id="flag-top">
+    <div class="fl-r"></div>
+    <div class="fl-w"></div>
+    <div class="fl-b"></div>
+  </div>
+
+  <div id="hud">
+    <div>SPEED: <b id="spd" class="val-speed">0</b> KM/H</div>
+    <div>SCORE: <b id="sc" class="val-score">0</b></div>
+  </div>
+
+  <div id="canvas-container">
+    <div id="overlay">
+      <h1>LËTZ ARCADE 3D 🇱🇺</h1>
+      <p>Ride through the Ardennes!<br>Lean into 3D curves, dodge traffic, collect the <b>Roude Léiw</b>!</p>
+      <button class="btn-act" id="btn-start">START TOUR 🏁</button>
+    </div>
+  </div>
+
+  <div id="touch-bar">
+    <button class="t-btn" id="b-left">◀ LEAN LEFT</button>
+    <button class="t-btn" id="b-right">LEAN RIGHT ▶</button>
+  </div>
+
+  <script>
+    const container = document.getElementById('canvas-container');
+    const spdEl = document.getElementById('spd');
+    const scEl = document.getElementById('sc');
+    const overlay = document.getElementById('overlay');
+    const btnStart = document.getElementById('btn-start');
+
+    // Scena 3D
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0e172a);
+    scene.fog = new THREE.FogExp2(0x0e172a, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    container.appendChild(renderer.domElement);
+
+    // Luci
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x14532d, 0.8);
+    scene.add(hemiLight);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+    dirLight.position.set(20, 40, 20);
+    scene.add(dirLight);
+
+    // Prato
+    const grassGeo = new THREE.PlaneGeometry(300, 300);
+    const grassMat = new THREE.MeshLambertMaterial({ color: 0x166534 });
+    const grass = new THREE.Mesh(grassGeo, grassMat);
+    grass.rotation.x = -Math.PI / 2;
+    grass.position.y = -0.05;
+    scene.add(grass);
+
+    // Strada
+    const roadWidth = 12;
+    const roadLength = 300;
+    const roadGeo = new THREE.PlaneGeometry(roadWidth, roadLength, 1, 100);
+    const roadMat = new THREE.MeshLambertMaterial({ color: 0x1f2937 });
+    const road = new THREE.Mesh(roadGeo, roadMat);
+    road.rotation.x = -Math.PI / 2;
+    road.position.z = -roadLength / 2 + 10;
+    scene.add(road);
+
+    // Cordoli Tricolori Lussemburgo (Rosso, Bianco, Celeste)
+    const curbGeo = new THREE.BoxGeometry(0.6, 0.15, 4);
+    const curbMats = [
+      new THREE.MeshBasicMaterial({ color: 0xEA141D }),
+      new THREE.MeshBasicMaterial({ color: 0xFFFFFF }),
+      new THREE.MeshBasicMaterial({ color: 0x00A1DE })
+    ];
+    const curbs = [];
+    for (let i = 0; i < 60; i++) {
+      const mat = curbMats[i % 3];
+      const zPos = -i * 4;
+      const cL = new THREE.Mesh(curbGeo, mat);
+      cL.position.set(-roadWidth / 2 - 0.3, 0.05, zPos);
+      scene.add(cL);
+      const cR = new THREE.Mesh(curbGeo, mat);
+      cR.position.set(roadWidth / 2 + 0.3, 0.05, zPos);
+      scene.add(cR);
+      curbs.push(cL, cR);
+    }
+
+    // Moto 3D del Giocatore
+    const bikeGroup = new THREE.Group();
+
+    // Ruote
+    const wheelGeo = new THREE.CylinderGeometry(0.45, 0.45, 0.2, 16);
+    const wheelMat = new THREE.MeshLambertMaterial({ color: 0x0f172a });
+    const fWheel = new THREE.Mesh(wheelGeo, wheelMat);
+    fWheel.rotation.z = Math.PI / 2;
+    fWheel.position.set(0, 0.45, -0.9);
+    bikeGroup.add(fWheel);
+
+    const rWheel = fWheel.clone();
+    rWheel.position.set(0, 0.45, 0.9);
+    bikeGroup.add(rWheel);
+
+    // Telaio / Motore
+    const frameGeo = new THREE.BoxGeometry(0.5, 0.4, 1.4);
+    const frameMat = new THREE.MeshLambertMaterial({ color: 0x334155 });
+    const frame = new THREE.Mesh(frameGeo, frameMat);
+    frame.position.set(0, 0.65, 0);
+    bikeGroup.add(frame);
+
+    // Carena Azzurra Lussemburgo (#00A1DE)
+    const tankGeo = new THREE.BoxGeometry(0.6, 0.35, 0.9);
+    const tankMat = new THREE.MeshLambertMaterial({ color: 0x00A1DE });
+    const tank = new THREE.Mesh(tankGeo, tankMat);
+    tank.position.set(0, 0.95, -0.1);
+    bikeGroup.add(tank);
+
+    // Pilota con Giacca Rossa (#EA141D) e Casco
+    const torsoGeo = new THREE.BoxGeometry(0.5, 0.6, 0.4);
+    const torsoMat = new THREE.MeshLambertMaterial({ color: 0xEA141D });
+    const torso = new THREE.Mesh(torsoGeo, torsoMat);
+    torso.position.set(0, 1.25, 0.2);
+    torso.rotation.x = 0.25;
+    bikeGroup.add(torso);
+
+    const helmetGeo = new THREE.SphereGeometry(0.24, 16, 16);
+    const helmetMat = new THREE.MeshLambertMaterial({ color: 0x00A1DE });
+    const helmet = new THREE.Mesh(helmetGeo, helmetMat);
+    helmet.position.set(0, 1.65, 0.1);
+    bikeGroup.add(helmet);
+
+    // Fanale Posteriore
+    const tailGeo = new THREE.BoxGeometry(0.25, 0.1, 0.05);
+    const tailMat = new THREE.MeshBasicMaterial({ color: 0xEA141D });
+    const tail = new THREE.Mesh(tailGeo, tailMat);
+    tail.position.set(0, 0.8, 0.85);
+    bikeGroup.add(tail);
+
+    scene.add(bikeGroup);
+    bikeGroup.position.set(0, 0, 0);
+
+    // Telecamera
+    camera.position.set(0, 2.8, 4.5);
+    camera.lookAt(0, 1.2, -10);
+
+    // Ostacoli (Auto e Bonus Leone Rosso)
+    const traffic = [];
+    const carGeo = new THREE.BoxGeometry(2, 1.2, 3.8);
+    const carMat = new THREE.MeshLambertMaterial({ color: 0x1e3a8a });
+
+    for (let i = 0; i < 5; i++) {
+      const car = new THREE.Mesh(carGeo, carMat);
+      car.position.set((Math.random() - 0.5) * 8, 0.6, -40 - i * 45);
+      scene.add(car);
+      traffic.push(car);
+    }
+
+    // Variabili di Gioco
+    let running = false;
+    let speed = 0;
+    const maxSpeed = 190;
+    let score = 0;
+    let playerX = 0;
+    let steerInput = 0;
+
+    function startGame() {
+      running = true;
+      score = 0;
+      speed = 60;
+      playerX = 0;
+      bikeGroup.position.x = 0;
+      overlay.style.display = 'none';
+    }
+
+    function crash() {
+      running = false;
+      speed = 0;
+      overlay.style.display = 'flex';
+      overlay.querySelector('h1').innerText = 'ACCIDENT! 💥';
+      overlay.querySelector('p').innerText = 'Final Score: ' + score;
+      btnStart.innerText = 'PLAY AGAIN 🔄';
+    }
+
+    btnStart.addEventListener('click', startGame);
+    btnStart.addEventListener('touchstart', (e) => { e.preventDefault(); startGame(); });
+
+    // Controlli
+    const bLeft = document.getElementById('b-left');
+    const bRight = document.getElementById('b-right');
+    function bindTouch(btn, dir) {
+      btn.addEventListener('touchstart', (e) => { e.preventDefault(); steerInput = dir; }, { passive: false });
+      btn.addEventListener('touchend', (e) => { e.preventDefault(); if (steerInput === dir) steerInput = 0; });
+      btn.addEventListener('mousedown', () => { steerInput = dir; });
+      btn.addEventListener('mouseup', () => { if (steerInput === dir) steerInput = 0; });
+    }
+    bindTouch(bLeft, -1);
+    bindTouch(bRight, 1);
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') steerInput = -1;
+      if (e.code === 'ArrowRight' || e.code === 'KeyD') steerInput = 1;
+      if (e.code === 'Space' && !running) startGame();
+    });
+    window.addEventListener('keyup', (e) => {
+      if ((e.code === 'ArrowLeft' || e.code === 'KeyA') && steerInput === -1) steerInput = 0;
+      if ((e.code === 'ArrowRight' || e.code === 'KeyD') && steerInput === 1) steerInput = 0;
+    });
+
+    // Loop di Animazione
+    let clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+
+      if (running) {
+        if (speed < maxSpeed) speed += 12 * delta;
+        score += Math.floor(speed * 0.1 * delta);
+        spdEl.innerText = Math.floor(speed);
+        scEl.innerText = score;
+
+        // Sterzata e inclinazione
+        playerX += steerInput * 9 * delta;
+        playerX = Math.max(-5, Math.min(5, playerX));
+        bikeGroup.position.x = playerX;
+        camera.position.x = playerX * 0.7;
+
+        const targetTilt = -steerInput * 0.45;
+        bikeGroup.rotation.z += (targetTilt - bikeGroup.rotation.z) * 0.15;
+        bikeGroup.rotation.y = -steerInput * 0.1;
+
+        // Scorrimento cordoli
+        const moveDist = (speed * 0.5) * delta;
+        curbs.forEach(c => {
+          c.position.z += moveDist;
+          if (c.position.z > 10) c.position.z -= 240;
+        });
+
+        // Traffico
+        traffic.forEach(car => {
+          car.position.z += (moveDist * 0.45);
+          if (car.position.z > 10) {
+            car.position.z = -180 - Math.random() * 40;
+            car.position.x = (Math.random() - 0.5) * 8;
+          }
+
+          // Collisione Box
+          if (Math.abs(bikeGroup.position.z - car.position.z) < 2.2 &&
+              Math.abs(bikeGroup.position.x - car.position.x) < 1.4) {
+            crash();
+          }
+        });
+      }
+
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
